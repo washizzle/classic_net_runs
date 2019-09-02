@@ -5,7 +5,7 @@ from pathlib import Path
 from skimage import io
 
 class PIDReader(Dataset):
-
+    #image_count = amount of images per epoch per phase (train/valid)
     def __init__(self, dataset_dir, data_transforms, csv_path, image_count, format):
         self.dataset_dir = dataset_dir
         self.data_transforms = data_transforms
@@ -14,12 +14,6 @@ class PIDReader(Dataset):
                               dtype={'id': str, 'name': str, 'class': str})
         self.chosen_images = select_images(self.csv_df, self.image_count)
         self.format = format
-
-    # def get_dataset(self, dataset_dir, data_transforms, csv_path):
-    #     csv_df = pd.read_csv(csv_path, names=['id', 'name', 'class'],
-    #                           dtype={'id': str, 'name': str, 'class': str})
-    #     for klasse, image in enumerate(select_images(csv_df)):
-    #         getImage(klasse, image)
 
 
     def get_image(self, klasse, image):

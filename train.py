@@ -32,7 +32,7 @@ def main(args):
     dataset_path = os.path.join(os.path.expanduser(args.datasets_path), dataset_name)
     dataloaders = load_data(dataset_path, args.csv_path, args.image_count, args.train_format, args.valid_format)
 
-    model_ft = train_model(model, criterion, optimizer, scheduler, num_epochs=25)
+    model_ft = train_model(model, criterion, optimizer, scheduler, dataloaders, num_epochs=25)
 
 
 def load_data(dataset_path, csv_path, image_count, train_format, valid_format):
@@ -58,7 +58,7 @@ def load_data(dataset_path, csv_path, image_count, train_format, valid_format):
                                                   shuffle=True, num_workers=4)
                    for x in ['train', 'val']}
 
-def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
+def train_model(model, criterion, optimizer, scheduler, dataloaders, num_epochs=25):
     since = time.time()
     since_last_epoch = time.time()
     best_model_wts = copy.deepcopy(model.state_dict())

@@ -1,12 +1,17 @@
 import torchvision.models as models
 import torch
 import torch.optim as optim
+from torch.optim import lr_scheduler 
+import torch.nn as nn
 import torchvision
 import torchvision.transforms as transforms
 import argparse
+from datetime import datetime
 import time
 import os
+import sys
 from pid_reader import PIDReader
+import copy
 #dir full omniglot dataset: F:\Users\maurice\Data_afstudeerproject\omniglot\protobuf_datasets\full dataset
     #dir separate alphabets: F:\Users\maurice\Data_afstudeerproject\omniglot\protobuf_datasets\alphabets\[alphabet_name]
 
@@ -17,7 +22,7 @@ def main(args):
     log_path = os.path.join(os.path.expanduser(args.logs_base_path), log_subdir)
     if not os.path.isdir(log_path):  # Create the log directory if it doesn't exist
         os.makedirs(log_path)
-    model_path = os.path.join(os.path.expanduser(args.models_base_path), subdir)
+    model_path = os.path.join(os.path.expanduser(args.models_base_path), log_subdir)
     if not os.path.isdir(model_path):  # Create the model directory if it doesn't exist
         os.makedirs(model_path)
 
@@ -29,13 +34,13 @@ def main(args):
     scheduler = lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.1)
 
     #load data
-    dataset_path = os.path.join(os.path.expanduser(args.datasets_path), dataset_name)
-    dataloaders = load_data(dataset_path, args.csv_path, args.image_count, args.train_format, args.valid_format)
+    dataset_path = os.path.join(os.path.expanduser(args.datasets_path), args.dataset_name)
+    dataloaders = load_data(dataset_path, args.train_csv_path, args.val_csv_path, args.image_count, args.train_format, args.valid_format, args.train_dataset_depth, args.val_dataset_depth)
 
-    model_ft = train_model(model, criterion, optimizer, scheduler, num_epochs=25)
+    model_ft = train_model(model, criterion, optimizer, scheduler, dataloaders, num_epochs=25)
 
 
-def load_data(dataset_path, csv_path, image_count, train_format, valid_format):
+def load_data(dataset_path, train_csv_path, val_csv_path, image_count, train_format, valid_format, train_dataset_depth, val_dataset_depth):
     data_transforms = {
         'train': transforms.Compose([
             # transforms.RandomResizedCrop(224),
@@ -50,15 +55,17 @@ def load_data(dataset_path, csv_path, image_count, train_format, valid_format):
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         ]),
     }
-    format = {'train': train_format, 'valid': valid_format}
-    image_datasets = {x: pid_reader(os.path.join(dataset_path, x), data_transforms[x], csv_path, image_count, format[x])
+    format = {'train': train_format, 'val': valid_format}
+    csv_path = {'train': train_csv_path, 'val': val_csv_path}
+    dataset_depth = {'train': train_dataset_depth, 'val': val_dataset_depth}
+    image_datasets = {x: PIDReader(os.path.join(dataset_path, x), data_transforms[x], csv_path[x], image_count, format[x], dataset_depth[x])
                       for x in ['train', 'val']}
     # image_datasets = {"train": train_dataset, "val": val_dataset}
     return {x: torch.utils.data.DataLoader(image_datasets[x], batch_size=4,
                                                   shuffle=True, num_workers=4)
                    for x in ['train', 'val']}
 
-def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
+def train_model(model, criterion, optimizer, scheduler, dataloaders, num_epochs=25):
     since = time.time()
     since_last_epoch = time.time()
     best_model_wts = copy.deepcopy(model.state_dict())
@@ -149,14 +156,20 @@ def parse_arguments(argv):
                         help='Path where to store logging.', default='./logs/')
     parser.add_argument('--models_base_path', type=str,
                         help='Path where to store resulting models.', default='./models/')
-    parser.add_argument('--csv_path', type=str,
-                        help='Path where to store resulting models.', default='./../csv/')
+    parser.add_argument('--train_csv_path', type=str,
+                        help='Path where to retrieve the csv with the list of all the training images.', default='./../csv/train')
+    parser.add_argument('--val_csv_path', type=str,
+                        help='Path where to retrieve the csv with the list of all the validation images.', default='./../csv/val')                    
     parser.add_argument('--image_count', type=int,
                         help='Amount of images per epoch per phase (train/valid).', default=10000)
     parser.add_argument('--train_format', type=str,
                         help='Format of images for training set', default='.png')
     parser.add_argument('--valid_format', type=str,
                         help='Format of images for validation set', default='.png')
+    parser.add_argument('--train_dataset_depth', default = 3, type = int,
+                        help = 'Defines depth of the images in the train dataset. E.g. Grayscale = 1 and rgb = 3 ')
+    parser.add_argument('--val_dataset_depth', default = 3, type = int,
+                        help = 'Defines depth of the images in the validation dataset. E.g. Grayscale = 1 and rgb = 3 ')                            
 
     return parser.parse_args(argv)
 

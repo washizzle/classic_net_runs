@@ -4,6 +4,7 @@ import sys
 import os
 import numpy as np
 import pandas as pd
+import torch
 from torch.utils.data import Dataset
 from pathlib import Path
 from skimage import io
@@ -19,7 +20,7 @@ class PIDReader(Dataset):
         print("csv_path: ", csv_path)
         self.csv_df = pd.read_csv(csv_path, header=0, names=['id', 'name', 'class'],
                               dtype={'id': str, 'name': str, 'class': str})
-        self.chosen_images = self.select_images(self.csv_df, self.image_count)
+        self.chosen_images, self.num_classes = self.select_images(self.csv_df, self.image_count)
         self.format = format
         self.dataset_depth = dataset_depth
 
@@ -60,7 +61,7 @@ class PIDReader(Dataset):
             name = csv_df.loc[csv_df['class'] == klasse, 'name'].values[0]
             img = np.random.randint(0, len(image_classes[klasse]))
             selected_images.append([image_classes[klasse][img], klasse, name])
-        return selected_images
+        return selected_images, len(classes)
 
     def __len__(self):
         
@@ -75,6 +76,7 @@ class PIDReader(Dataset):
             img = io.imread(img, plugin='imageio')
             if self.dataset_depth==1:
                 img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+            img_class = torch.from_numpy(np.array(img_class).astype('long'))
             sample = {"image": img, "class": img_class}
             if self.data_transforms:
                 sample['image'] = self.data_transforms(sample['image'])

@@ -11,6 +11,7 @@ import time
 import os
 import sys
 from pid_reader import PIDReader
+from MNIST_color import MNISTColor
 import copy
 #dir full omniglot dataset: F:\Users\maurice\Data_afstudeerproject\omniglot\protobuf_datasets\full dataset
     #dir separate alphabets: F:\Users\maurice\Data_afstudeerproject\omniglot\protobuf_datasets\alphabets\[alphabet_name]
@@ -92,7 +93,7 @@ def main(args):
 def load_torchvision_data(dataset_name, dataset_path, data_transforms)
     data = None
     if dataset_name == 'mnist':
-        data = {x: torchvision.datasets.MNIST(os.path.join(dataset_path, x), train=x=='train', 
+        data = {x: torchvision.datasets.MNISTColor(os.path.join(dataset_path, x), train=x=='train',
                     transform=data_transforms[x], target_transform=None, download=True)
                 for x in ['train', 'val']}
     else:

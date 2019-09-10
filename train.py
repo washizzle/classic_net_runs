@@ -12,10 +12,10 @@ import os
 import sys
 from pid_reader import PIDReader
 from MNIST_color import MNISTColor
+from FMNIST_color import FMNISTColor
 import copy
 import pandas as pd
-#dir full omniglot dataset: F:\Users\maurice\Data_afstudeerproject\omniglot\protobuf_datasets\full dataset
-    #dir separate alphabets: F:\Users\maurice\Data_afstudeerproject\omniglot\protobuf_datasets\alphabets\[alphabet_name]
+import numpy as np
 
 def vgg16(num_classes, pretrained):
     model = models.vgg16(pretrained=pretrained)
@@ -35,9 +35,29 @@ def resnet34(num_classes, pretrained):
     model.fc = nn.Linear(num_ftrs, num_classes)
     return model
     
+def googlenet(num_classes, pretrained):
+    model = models.googlenet(pretrained=pretrained)
+    if pretrained:
+        for param in model.parameters():
+            param.requires_grad = False
+    num_ftrs = model.fc.in_features
+    model.aux_logits=False #don't forget to remove if problem isn't solved: https://stackoverflow.com/questions/51045839/pytorch-inceptionv3-transfer-learning-gives-error-max-received-an-invalid-co
+    model.fc = nn.Linear(num_ftrs, num_classes)
+    return model
+    
+def alexnet(num_classes, pretrained):
+    model = models.alexnet(pretrained=pretrained)
+    if pretrained:
+        for param in model.parameters():
+            param.requires_grad = False
+    #fix
+    return model
+    
+    
 def main(args):
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     #add logging
+    print(args)
     log_subdir = datetime.strftime(datetime.now(), '%Y%m%d-%H%M%S')
     log_path = os.path.join(os.path.expanduser(args.logs_base_path), log_subdir)
     if not os.path.isdir(log_path):  # Create the log directory if it doesn't exist
@@ -85,9 +105,11 @@ def main(args):
     if args.model_name == 'resnet34':
         model = resnet34(num_classes, args.pretrained_imagenet)
     elif args.model_name == 'vgg16':
-        model = vgg16(num_classes)
-    elif args.model_name == '':
-    
+        model = vgg16(num_classes, args.pretrained_imagenet)
+    elif args.model_name == 'googlenet':
+        model = googlenet(num_classes, args.pretrained_imagenet)
+    elif args.model_name == 'alexnet':
+        model = alexnet(num_classes, args.pretrained_imagenet)        
     else:
         raise Exception("no known model given")
     print("num_classes: ", num_classes)
@@ -130,9 +152,26 @@ def load_torchvision_data(dataset_name, dataset_path, data_transforms, dataset_d
         datasets = {x: MNISTColor(os.path.join(dataset_path, x), train=x=='train',
                     transform=data_transforms[x], target_transform=None, download=True, dataset_depth=dataset_depth[x])
                 for x in ['train', 'val']}
+    elif dataset_name == 'imagenet':#too big.
+        datasets = {x: torchvision.datasets.ImageNet(os.path.join(dataset_path, x), train=x=='train',
+                    transform=data_transforms[x], target_transform=None, download=False)
+                for x in ['train', 'val']}
+    elif dataset_name == 'cifar10':
+        datasets = {x: torchvision.datasets.CIFAR10(os.path.join(dataset_path, x), train=x=='train',
+                    transform=data_transforms[x], target_transform=None, download=True)
+                for x in ['train', 'val']}
+    elif dataset_name == 'fmnist':
+        datasets = {x: FMNISTColor(os.path.join(dataset_path, x), train=x=='train',
+                    transform=data_transforms[x], target_transform=None, download=True, dataset_depth=dataset_depth[x])
+                for x in ['train', 'val']}            
     else:
         raise Exception("This torchvision dataset is not known.")
     
+    #classes = []
+    #if isinstance(datasets['train'].targets, list):
+    #    x = np.array(datasets['train'].targets)
+    #    classes = np.unique(x)
+        
     classes = datasets['train'].targets.unique()
     create_dataset_csvs(dataset_name, classes, datasets)
     num_classes = len(classes)

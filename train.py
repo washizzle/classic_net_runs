@@ -13,13 +13,15 @@ import sys
 from pid_reader import PIDReader
 from MNIST_color import MNISTColor
 import copy
+import pandas as pd
 #dir full omniglot dataset: F:\Users\maurice\Data_afstudeerproject\omniglot\protobuf_datasets\full dataset
     #dir separate alphabets: F:\Users\maurice\Data_afstudeerproject\omniglot\protobuf_datasets\alphabets\[alphabet_name]
 
-def vgg16(num_classes):
-    model = models.vgg16(pretrained=True)
-    for param in model.parameters():
-        param.requires_grad = False
+def vgg16(num_classes, pretrained):
+    model = models.vgg16(pretrained=pretrained)
+    if pretrained:
+        for param in model.parameters():
+            param.requires_grad = False
     num_ftrs = model.classifier[6].in_features
     model.classifier[6] = nn.Linear(num_ftrs, num_classes)
     return model
@@ -60,10 +62,12 @@ def main(args):
         ]),
     }
     datasets_path = os.path.join(os.path.expanduser(args.root_path), "datasets")
+    dataset_depth = {'train': args.train_dataset_depth, 'val': args.val_dataset_depth}
     # if I use my own datasets, they are always .pid files, so i want to keep to keep these in a separate folder from the jpeg files loaded from torchvision.
     if args.torchvision_dataset:
         datasets_path = os.path.join(os.path.expanduser(args.root_path), "jpg_datasets")
     dataloaders, dataset_sizes, num_classes = None, None, None
+    
     if args.dataset_name == 'omniglot_1_folder_splits':
         dataset_path = os.path.join(os.path.expanduser(datasets_path), args.dataset_name)
         dataloaders, dataset_sizes, num_classes = load_own_data(dataset_path, args.train_csv_path, args.val_csv_path, 
@@ -71,14 +75,23 @@ def main(args):
                                               args.train_dataset_depth, args.val_dataset_depth, data_transforms)
     elif args.torchvision_dataset:
         dataset_path = os.path.join(os.path.expanduser(datasets_path), args.dataset_name)
-        dataloaders, dataset_sizes, num_classes = load_torchvision_data(args.dataset_name, dataset_path, data_transforms)
+        dataloaders, dataset_sizes, num_classes = load_torchvision_data(args.dataset_name, dataset_path, data_transforms, dataset_depth)
     else:
         raise Exception("This dataset is not known.")
     
     
     #load model
+    model = None
+    if args.model_name == 'resnet34':
+        model = resnet34(num_classes, args.pretrained_imagenet)
+    elif args.model_name == 'vgg16':
+        model = vgg16(num_classes)
+    elif args.model_name == '':
+    
+    else:
+        raise Exception("no known model given")
     print("num_classes: ", num_classes)
-    model = resnet34(num_classes, args.pretrained_imagenet)
+    
     # print("resnet34 model: ", model)
     # model = vgg16(num_classes)
     model = model.to(device)
@@ -90,21 +103,44 @@ def main(args):
     model_ft = train_model(device, model, criterion, optimizer, scheduler, dataloaders, dataset_sizes, log_path, model_path, num_epochs=25)
 
 
-def load_torchvision_data(dataset_name, dataset_path, data_transforms)
-    data = None
+def create_dataset_csvs(dataset_name, classes, datasets):
+    for x in ['train', 'val']:
+        file_name = dataset_name + "_" + x + ".csv"
+        if not os.path.isfile(file_name):
+            df = pd.DataFrame()
+            for klasse in classes:
+                indices = []
+                for idx in range(len(datasets[x].targets)):
+                    if datasets[x].targets[idx] == klasse:
+                        indices.append(idx)
+                for idx in indices:
+                    df = df.append({'id': int(idx), 'name': klasse.item()}, ignore_index = True)
+                    #print("idx: ", idx, ", klasse: ", klasse, ", datasets['train'].targets[idx]: ",  datasets['train'].targets[idx], ", datasets['train'].data[idx]: ",datasets['train'].data[idx])
+            df = df.sort_values(by = ['name', 'id']).reset_index(drop = True)
+            df['class'] = pd.factorize(df['name'])[0]
+            df = df.fillna(-9999)
+            df = df.astype(int)
+            df.to_csv(file_name, index = False)
+            print(file_name + " created.")
+
+
+def load_torchvision_data(dataset_name, dataset_path, data_transforms, dataset_depth):
+    datasets = None
     if dataset_name == 'mnist':
-        data = {x: torchvision.datasets.MNISTColor(os.path.join(dataset_path, x), train=x=='train',
-                    transform=data_transforms[x], target_transform=None, download=True)
+        datasets = {x: MNISTColor(os.path.join(dataset_path, x), train=x=='train',
+                    transform=data_transforms[x], target_transform=None, download=True, dataset_depth=dataset_depth[x])
                 for x in ['train', 'val']}
     else:
         raise Exception("This torchvision dataset is not known.")
-    classes = data['train'].targets.unique()
+    
+    classes = datasets['train'].targets.unique()
+    create_dataset_csvs(dataset_name, classes, datasets)
     num_classes = len(classes)
-    dataset_sizes = {x: len(data[x]) for x in ['train','val']}
-    dataloaders = {x: torch.utils.data.DataLoader(data[x], batch_size=4,
+    dataset_sizes = {x: len(datasets[x]) for x in ['train','val']}
+    dataloaders = {x: torch.utils.data.DataLoader(datasets[x], batch_size=4,
                                                   shuffle=True, num_workers=4)
                    for x in ['train', 'val']}
-    return num_classes, dataset_sizes, dataloaders
+    return  dataloaders, dataset_sizes, num_classes
                    
 
 def load_own_data(dataset_path, train_csv_path, val_csv_path, image_count, train_format, valid_format, train_dataset_depth, val_dataset_depth, data_transforms):
@@ -211,6 +247,8 @@ def parse_arguments(argv):
 
     parser.add_argument('--root_path', type=str,
                         help='Path where the datasets and jpg_datasets folders are stored.', default='./../datasets/')
+    parser.add_argument('--model_name', type=str,
+                        help='Name of the used neural network model.', default='resnet34')
     parser.add_argument('--dataset_name', type=str,
                         help='Name of the dataset folder.', default='omniglot')
     parser.add_argument('--logs_base_path', type=str,

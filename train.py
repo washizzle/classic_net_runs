@@ -119,6 +119,11 @@ def main(args):
     
     if args.run_all_models:
         MODEL_NAMES = [ 'squeezenetv10', 'squeezenetv11', 'resnet34', 'vgg16', 'googlenet', 'alexnet' ]
+        model_parameters = {
+            'model_name': 'squeezenetv10',
+            'learning_rate': 0.001, #perhaps some scheduler here that works well for the given network
+            'criterion': nn.CrossEntropyLoss()
+        }
         
         for model_name in MODEL_NAMES:
             #load model
@@ -131,7 +136,7 @@ def main(args):
             print("model: ", model)
             criterion = nn.CrossEntropyLoss()
             optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
-            scheduler = lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.1)
+            scheduler = lr_scheduler.StepLR(optimizer, step_size=args.num_epochs/4, gamma=0.1)
             try:
                 model_ft = train_model(device, model, criterion, optimizer, scheduler, dataloaders, dataset_sizes, log_path, model_path, num_epochs=args.num_epochs)
             except:
@@ -357,7 +362,7 @@ def parse_arguments(argv):
                         help = 'Defines depth of the images in the train dataset. E.g. Grayscale = 1 and rgb = 3 ')
     parser.add_argument('--val_dataset_depth', default = 3, type = int,
                         help = 'Defines depth of the images in the validation dataset. E.g. Grayscale = 1 and rgb = 3 ')
-    parser.add_argument('--learning_rate', default = 0.001, type = int,
+    parser.add_argument('--learning_rate', default = 0.01, type = int,
                         help = 'Learning rate for the optimizer')
     parser.add_argument('--pretrained_imagenet', 
                     help='Defines whether the used model is pretrained on ImageNet or not.', action='store_true')

@@ -50,10 +50,26 @@ def alexnet(num_classes, pretrained):
     if pretrained:
         for param in model.parameters():
             param.requires_grad = False
-    #fix
+    num_ftrs = model.classifier[6].in_features
+    model.classifier[6] = nn.Linear(num_ftrs, num_classes)
     return model
     
-    
+def squeezenetv10(num_classes, pretrained):
+    model = models.squeezenet1_0(pretrained=pretrained)
+    if pretrained:
+        for param in model.parameters():
+            param.requires_grad = False
+    #fix
+    return model
+
+def squeezenetv11(num_classes, pretrained):
+    model = models.squeezenet1_1(pretrained=pretrained)
+    if pretrained:
+        for param in model.parameters():
+            param.requires_grad = False
+    #fix
+    return model
+
 def main(args):
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     #add logging
@@ -98,32 +114,61 @@ def main(args):
         dataloaders, dataset_sizes, num_classes = load_torchvision_data(args.dataset_name, dataset_path, data_transforms, dataset_depth)
     else:
         raise Exception("This dataset is not known.")
-    
-    
-    #load model
-    model = None
-    if args.model_name == 'resnet34':
-        model = resnet34(num_classes, args.pretrained_imagenet)
-    elif args.model_name == 'vgg16':
-        model = vgg16(num_classes, args.pretrained_imagenet)
-    elif args.model_name == 'googlenet':
-        model = googlenet(num_classes, args.pretrained_imagenet)
-    elif args.model_name == 'alexnet':
-        model = alexnet(num_classes, args.pretrained_imagenet)        
-    else:
-        raise Exception("no known model given")
+
     print("num_classes: ", num_classes)
     
-    # print("resnet34 model: ", model)
-    # model = vgg16(num_classes)
-    model = model.to(device)
-    print("model: ", model)
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
-    scheduler = lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.1)
-    
-    model_ft = train_model(device, model, criterion, optimizer, scheduler, dataloaders, dataset_sizes, log_path, model_path, num_epochs=25)
+    if args.run_all_models:
+        MODEL_NAMES = [ 'squeezenetv10', 'squeezenetv11', 'resnet34', 'vgg16', 'googlenet', 'alexnet' ]
+        
+        for model_name in MODEL_NAMES:
+            #load model
+            model = load_model(model_name, num_classes, args.pretrained_imagenet)
+            
+            
+            # print("resnet34 model: ", model)
+            # model = vgg16(num_classes)
+            model = model.to(device)
+            print("model: ", model)
+            criterion = nn.CrossEntropyLoss()
+            optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
+            scheduler = lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.1)
+            try:
+                model_ft = train_model(device, model, criterion, optimizer, scheduler, dataloaders, dataset_sizes, log_path, model_path, num_epochs=args.num_epochs)
+            except:
+                print("traceback: ", traceback.format_exc())
+                print("something went wrong with model ", model_name)
+    else:
+        #load model
+        
+        model = load_model(args.model_name, num_classes, args.pretrained_imagenet)
+        
+        # print("resnet34 model: ", model)
+        # model = vgg16(num_classes)
+        model = model.to(device)
+        print("model: ", model)
+        criterion = nn.CrossEntropyLoss()
+        optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
+        scheduler = lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.1)
+        
+        model_ft = train_model(device, model, criterion, optimizer, scheduler, dataloaders, dataset_sizes, log_path, model_path, num_epochs=args.num_epochs)
 
+def load_model(model_name, num_classes, pretrained_imagenet):
+    model = None        
+    if model_name == 'resnet34':
+        model = resnet34(num_classes, pretrained_imagenet)
+    elif model_name == 'vgg16':
+        model = vgg16(num_classes, pretrained_imagenet)
+    elif model_name == 'googlenet':
+        model = googlenet(num_classes, pretrained_imagenet)
+    elif model_name == 'alexnet':
+        model = alexnet(num_classes, pretrained_imagenet)
+    elif model_name == 'squeezenetv10':
+        model = squeezenetv10(num_classes, pretrained_imagenet)
+    elif model_name == 'squeezenetv11':
+        model = squeezenetv11(num_classes, pretrained_imagenet)
+    else:
+        raise Exception("no known model given")
+    return model
 
 def create_dataset_csvs(dataset_name, classes, datasets):
     for x in ['train', 'val']:
@@ -220,9 +265,9 @@ def train_model(device, model, criterion, optimizer, scheduler, dataloaders, dat
             # Iterate over data.
             for index, batch_sample in enumerate(dataloaders[phase]):
                 if not 'exception' in batch_sample:
-                    print("index: ", index)
+                    #print("index: ", index)
                     # print("inputs: ", batch_sample['image'])
-                    print("labels: ", batch_sample['class'])
+                    #print("labels: ", batch_sample['class'])
                     labels = batch_sample['class'].to(device)
                     inputs = batch_sample['image'].to(device)
                     
@@ -235,7 +280,7 @@ def train_model(device, model, criterion, optimizer, scheduler, dataloaders, dat
                         outputs = model(inputs)
                         # print("outputs: ", outputs)
                         _, preds = torch.max(outputs, 1)
-                        print("preds: ", preds)
+                        #print("preds: ", preds)
                         loss = criterion(outputs, labels)
 
                         # backward + optimize only if in training phase
@@ -284,8 +329,12 @@ def train_model(device, model, criterion, optimizer, scheduler, dataloaders, dat
 def parse_arguments(argv):
     parser = argparse.ArgumentParser(description='Classic model training and validation')
 
+    parser.add_argument('--num_epochs', type=int,
+                        help='Amount of epochs.', default=25)
     parser.add_argument('--root_path', type=str,
                         help='Path where the datasets and jpg_datasets folders are stored.', default='./../datasets/')
+    parser.add_argument('--run_all_models', 
+                    help='Defines whether we run all models, or just the one that is selected in --model_name.', action='store_true')
     parser.add_argument('--model_name', type=str,
                         help='Name of the used neural network model.', default='resnet34')
     parser.add_argument('--dataset_name', type=str,

@@ -16,28 +16,29 @@ from FMNIST_color import FMNISTColor
 import copy
 import pandas as pd
 import numpy as np
+import traceback
 
-def vgg16(num_classes, pretrained):
-    model = models.vgg16(pretrained=pretrained)
-    if pretrained:
+def vgg16(num_classes, pretrainedOnImageNet):
+    model = models.vgg16(pretrained=pretrainedOnImageNet)
+    if pretrainedOnImageNet:
         for param in model.parameters():
             param.requires_grad = False
     num_ftrs = model.classifier[6].in_features
     model.classifier[6] = nn.Linear(num_ftrs, num_classes)
     return model
 
-def resnet34(num_classes, pretrained):
-    model = models.resnet34(pretrained=pretrained)
-    if pretrained:
+def resnet34(num_classes, pretrainedOnImageNet):
+    model = models.resnet34(pretrained=pretrainedOnImageNet)
+    if pretrainedOnImageNet:
         for param in model.parameters():
             param.requires_grad = False
     num_ftrs = model.fc.in_features
     model.fc = nn.Linear(num_ftrs, num_classes)
     return model
     
-def googlenet(num_classes, pretrained):
-    model = models.googlenet(pretrained=pretrained)
-    if pretrained:
+def googlenet(num_classes, pretrainedOnImageNet):
+    model = models.googlenet(pretrained=pretrainedOnImageNet)
+    if pretrainedOnImageNet:
         for param in model.parameters():
             param.requires_grad = False
     num_ftrs = model.fc.in_features
@@ -45,53 +46,82 @@ def googlenet(num_classes, pretrained):
     model.fc = nn.Linear(num_ftrs, num_classes)
     return model
     
-def alexnet(num_classes, pretrained):
-    model = models.alexnet(pretrained=pretrained)
-    if pretrained:
+def alexnet(num_classes, pretrainedOnImageNet):
+    model = models.alexnet(pretrained=pretrainedOnImageNet)
+    if pretrainedOnImageNet:
         for param in model.parameters():
             param.requires_grad = False
     num_ftrs = model.classifier[6].in_features
     model.classifier[6] = nn.Linear(num_ftrs, num_classes)
     return model
     
-def squeezenetv10(num_classes, pretrained):
-    model = models.squeezenet1_0(pretrained=pretrained)
-    if pretrained:
+def squeezenetv10(num_classes, pretrainedOnImageNet):
+    model = models.squeezenet1_0(pretrained=pretrainedOnImageNet)
+    if pretrainedOnImageNet:
         for param in model.parameters():
             param.requires_grad = False
     #fix
     return model
 
-def squeezenetv11(num_classes, pretrained):
-    model = models.squeezenet1_1(pretrained=pretrained)
-    if pretrained:
+def squeezenetv11(num_classes, pretrainedOnImageNet):
+    model = models.squeezenet1_1(pretrained=pretrainedOnImageNet)
+    if pretrainedOnImageNet:
         for param in model.parameters():
             param.requires_grad = False
     #fix
     return model
+    
+    
+def do_logging(logs_base_path, models_base_path):
+    log_subdir = datetime.strftime(datetime.now(), '%Y%m%d-%H%M%S')
+    log_path = os.path.join(os.path.expanduser(logs_base_path), log_subdir)
+    if not os.path.isdir(log_path):  # Create the log directory if it doesn't exist
+        os.makedirs(log_path)
+        print("Creating log folder: ", log_path)
+    else:
+        print("Logs are saved in: ", log_path)
+    model_path = os.path.join(os.path.expanduser(models_base_path), log_subdir)
+    if not os.path.isdir(model_path):  # Create the model directory if it doesn't exist
+        os.makedirs(model_path)
+        print("Creating model folder: ", model_path)
+    else:
+        print("Model are saved in: ", model_path)
+    return log_path, model_path
 
 def main(args):
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     #add logging
     print(args)
-    log_subdir = datetime.strftime(datetime.now(), '%Y%m%d-%H%M%S')
-    log_path = os.path.join(os.path.expanduser(args.logs_base_path), log_subdir)
-    if not os.path.isdir(log_path):  # Create the log directory if it doesn't exist
-        os.makedirs(log_path)
-    model_path = os.path.join(os.path.expanduser(args.models_base_path), log_subdir)
-    if not os.path.isdir(model_path):  # Create the model directory if it doesn't exist
-        os.makedirs(model_path)
-
+    log_path, model_path = do_logging(args.logs_base_path, args.models_base_path)
+    
+    #original transforms:
+    #data_transforms = {
+    #    'train': transforms.Compose([
+    #        # transforms.RandomResizedCrop(224),
+    #        # transforms.RandomHorizontalFlip(),
+    #        transforms.ToTensor(),
+    #        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    #    ]),
+    #    'val': transforms.Compose([
+    #        # transforms.Resize(256),
+    #        # transforms.CenterCrop(224),
+    #        transforms.ToTensor(),
+    #        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    #    ]),
+    #}
+    
     #load data
     data_transforms = {
         'train': transforms.Compose([
-            # transforms.RandomResizedCrop(224),
-            # transforms.RandomHorizontalFlip(),
+            transforms.ToPILImage(),
+            transforms.Resize(224),
+            transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         ]),
         'val': transforms.Compose([
-            # transforms.Resize(256),
+            transforms.ToPILImage(),
+            transforms.Resize(224),
             # transforms.CenterCrop(224),
             transforms.ToTensor(),
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
@@ -108,17 +138,24 @@ def main(args):
         dataset_path = os.path.join(os.path.expanduser(datasets_path), args.dataset_name)
         dataloaders, dataset_sizes, num_classes = load_own_data(dataset_path, args.train_csv_path, args.val_csv_path, 
                                               args.image_count, args.train_format, args.valid_format, 
-                                              args.train_dataset_depth, args.val_dataset_depth, data_transforms)
+                                              args.train_dataset_depth, args.val_dataset_depth, data_transforms,
+                                              args.batch_size)
     elif args.torchvision_dataset:
         dataset_path = os.path.join(os.path.expanduser(datasets_path), args.dataset_name)
-        dataloaders, dataset_sizes, num_classes = load_torchvision_data(args.dataset_name, dataset_path, data_transforms, dataset_depth)
+        dataloaders, dataset_sizes, num_classes = load_torchvision_data(args.dataset_name, dataset_path, data_transforms, dataset_depth, args.batch_size)
     else:
         raise Exception("This dataset is not known.")
 
     print("num_classes: ", num_classes)
-    
+    #load model(s)
     if args.run_all_models:
-        MODEL_NAMES = [ 'squeezenetv10', 'squeezenetv11', 'resnet34', 'vgg16', 'googlenet', 'alexnet' ]
+        MODEL_NAMES = [ 
+                        #'squeezenetv10', 
+                        #'squeezenetv11', 
+                        'resnet34', 
+                        'vgg16', 
+                        'googlenet', 
+                        'alexnet']
         model_parameters = {
             'model_name': 'squeezenetv10',
             'learning_rate': 0.001, #perhaps some scheduler here that works well for the given network
@@ -126,7 +163,6 @@ def main(args):
         }
         
         for model_name in MODEL_NAMES:
-            #load model
             model = load_model(model_name, num_classes, args.pretrained_imagenet)
             
             
@@ -138,12 +174,12 @@ def main(args):
             optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
             scheduler = lr_scheduler.StepLR(optimizer, step_size=args.num_epochs/4, gamma=0.1)
             try:
-                model_ft = train_model(device, model, criterion, optimizer, scheduler, dataloaders, dataset_sizes, log_path, model_path, num_epochs=args.num_epochs)
+                model_ft = train_model(device, model, model_name, criterion, optimizer, scheduler, dataloaders, dataset_sizes, log_path, model_path, num_epochs=args.num_epochs)
             except:
                 print("traceback: ", traceback.format_exc())
                 print("something went wrong with model ", model_name)
+    
     else:
-        #load model
         
         model = load_model(args.model_name, num_classes, args.pretrained_imagenet)
         
@@ -152,10 +188,10 @@ def main(args):
         model = model.to(device)
         print("model: ", model)
         criterion = nn.CrossEntropyLoss()
-        optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
-        scheduler = lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.1)
+        optimizer = optim.Adam(model.parameters(), lr=args.learning_rate, momentum=0.9)
+        scheduler = lr_scheduler.StepLR(optimizer, step_size=args.num_epochs/4, gamma=0.1)
         
-        model_ft = train_model(device, model, criterion, optimizer, scheduler, dataloaders, dataset_sizes, log_path, model_path, num_epochs=args.num_epochs)
+        model_ft = train_model(device, model, model_name, criterion, optimizer, scheduler, dataloaders, dataset_sizes, log_path, model_path, num_epochs=args.num_epochs)
 
 def load_model(model_name, num_classes, pretrained_imagenet):
     model = None        
@@ -175,6 +211,7 @@ def load_model(model_name, num_classes, pretrained_imagenet):
         raise Exception("no known model given")
     return model
 
+#creates a csv file with all the image file names, sorted by class. This is not used in this project, but for my facenet project.
 def create_dataset_csvs(dataset_name, classes, datasets):
     for x in ['train', 'val']:
         file_name = dataset_name + "_" + x + ".csv"
@@ -196,7 +233,7 @@ def create_dataset_csvs(dataset_name, classes, datasets):
             print(file_name + " created.")
 
 
-def load_torchvision_data(dataset_name, dataset_path, data_transforms, dataset_depth):
+def load_torchvision_data(dataset_name, dataset_path, data_transforms, dataset_depth, batch_size):
     datasets = None
     if dataset_name == 'mnist':
         datasets = {x: MNISTColor(os.path.join(dataset_path, x), train=x=='train',
@@ -226,13 +263,13 @@ def load_torchvision_data(dataset_name, dataset_path, data_transforms, dataset_d
     create_dataset_csvs(dataset_name, classes, datasets)
     num_classes = len(classes)
     dataset_sizes = {x: len(datasets[x]) for x in ['train','val']}
-    dataloaders = {x: torch.utils.data.DataLoader(datasets[x], batch_size=4,
+    dataloaders = {x: torch.utils.data.DataLoader(datasets[x], batch_size=batch_size,
                                                   shuffle=True, num_workers=4)
                    for x in ['train', 'val']}
     return  dataloaders, dataset_sizes, num_classes
                    
 
-def load_own_data(dataset_path, train_csv_path, val_csv_path, image_count, train_format, valid_format, train_dataset_depth, val_dataset_depth, data_transforms):
+def load_own_data(dataset_path, train_csv_path, val_csv_path, image_count, train_format, valid_format, train_dataset_depth, val_dataset_depth, data_transforms, batch_size):
     
     format = {'train': train_format, 'val': valid_format}
     csv_path = {'train': train_csv_path, 'val': val_csv_path}
@@ -242,12 +279,12 @@ def load_own_data(dataset_path, train_csv_path, val_csv_path, image_count, train
     # image_datasets = {"train": train_dataset, "val": val_dataset}
     num_classes = image_datasets['train'].num_classes
     dataset_sizes = {x: len(image_datasets[x]) for x in ['train', 'val']}
-    dataloaders = {x: torch.utils.data.DataLoader(image_datasets[x], batch_size=4,
-                                                  shuffle=True, num_workers=4)
+    dataloaders = {x: torch.utils.data.DataLoader(image_datasets[x], batch_size=batch_size,
+                                                  shuffle=True, num_workers=8)
                    for x in ['train', 'val']}
     return dataloaders, dataset_sizes, num_classes
 
-def train_model(device, model, criterion, optimizer, scheduler, dataloaders, dataset_sizes, log_path, model_path, num_epochs=25):
+def train_model(device, model, model_name, criterion, optimizer, scheduler, dataloaders, dataset_sizes, log_path, model_path, num_epochs=25):
     since = time.time()
     since_last_epoch = time.time()
     best_model_wts = copy.deepcopy(model.state_dict())
@@ -304,7 +341,7 @@ def train_model(device, model, criterion, optimizer, scheduler, dataloaders, dat
             print('{} Loss: {:.4f} Acc: {:.4f}'.format(
                 phase, epoch_loss, epoch_acc))
 
-            with open('{}/{}_log_epoch{}.txt'.format(log_path, phase, epoch), 'w') as f:
+            with open('{}/{}_{}_log_epoch{}.txt'.format(log_path, model_name, phase, epoch), 'w') as f:
                 f.write(str(epoch) + '\t' +
                         str(epoch_acc) + '\t' +
                         str(epoch_loss) + '\t' +
@@ -334,8 +371,10 @@ def train_model(device, model, criterion, optimizer, scheduler, dataloaders, dat
 def parse_arguments(argv):
     parser = argparse.ArgumentParser(description='Classic model training and validation')
 
+    parser.add_argument('--batch_size', type=int,
+                        help='Batch size in SGD.', default=32)
     parser.add_argument('--num_epochs', type=int,
-                        help='Amount of epochs.', default=25)
+                        help='Amount of epochs.', default=100)
     parser.add_argument('--root_path', type=str,
                         help='Path where the datasets and jpg_datasets folders are stored.', default='./../datasets/')
     parser.add_argument('--run_all_models', 
@@ -362,7 +401,7 @@ def parse_arguments(argv):
                         help = 'Defines depth of the images in the train dataset. E.g. Grayscale = 1 and rgb = 3 ')
     parser.add_argument('--val_dataset_depth', default = 3, type = int,
                         help = 'Defines depth of the images in the validation dataset. E.g. Grayscale = 1 and rgb = 3 ')
-    parser.add_argument('--learning_rate', default = 0.01, type = int,
+    parser.add_argument('--learning_rate', default = 0.001, type = int,
                         help = 'Learning rate for the optimizer')
     parser.add_argument('--pretrained_imagenet', 
                     help='Defines whether the used model is pretrained on ImageNet or not.', action='store_true')

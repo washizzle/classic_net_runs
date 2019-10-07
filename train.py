@@ -13,10 +13,17 @@ import sys
 from pid_reader import PIDReader
 from MNIST_color import MNISTColor
 from FMNIST_color import FMNISTColor
+from five_layer_net import FiveLayerNet
 import copy
 import pandas as pd
 import numpy as np
 import traceback
+
+def five_layer_net(num_classes, pretrainedOnImageNet):
+    model = FiveLayerNet()
+    num_ftrs = model.fc3.in_features
+    model.fc3 = nn.Linear(num_ftrs, num_classes)
+    return model
 
 def vgg16(num_classes, pretrainedOnImageNet):
     model = models.vgg16(pretrained=pretrainedOnImageNet)
@@ -113,16 +120,17 @@ def main(args):
     #load data
     data_transforms = {
         'train': transforms.Compose([
-            transforms.ToPILImage(),
+            transforms.ToPILImage(), #might have to leave this out when using cifar10
             transforms.Resize(224),
+            transforms.CenterCrop(224),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         ]),
         'val': transforms.Compose([
-            transforms.ToPILImage(),
+            transforms.ToPILImage(), #might have to leave this out when using cifar10
             transforms.Resize(224),
-            # transforms.CenterCrop(224),
+            transforms.CenterCrop(224),
             transforms.ToTensor(),
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         ]),
@@ -134,7 +142,59 @@ def main(args):
         datasets_path = os.path.join(os.path.expanduser(args.root_path), "jpg_datasets")
     dataloaders, dataset_sizes, num_classes = None, None, None
     
+    dataset_names_csvs = [
+                        {
+                        'name': 'omniglot_1_folder_splits', 
+                        'csv_train': '/nfs/home4/mhouben/facenet_pytorch/datasets/omniglot_train_1_folder.csv', 
+                        'csv_val': '/nfs/home4/mhouben/facenet_pytorch/datasets/omniglot_val_1_folder.csv'
+                        },
+                        {
+                        'name': 'vggface2', 
+                        'csv_train': '/nfs/home4/mhouben/facenet_pytorch/datasets/train_vggface2.csv', 
+                        'csv_val': '/nfs/home4/mhouben/facenet_pytorch/datasets/test_vggface2.csv'
+                        },
+                        {
+                        'name': 'CASIA_aligned', 
+                        'csv_train': '/nfs/home4/mhouben/facenet_pytorch/datasets/CASIA_train.csv', 
+                        'csv_val': '/nfs/home4/mhouben/facenet_pytorch/datasets/CASIA_test.csv'
+                        },
+                        {
+                        'name': 'inat_reptiles', 
+                        'csv_train': '/nfs/home4/mhouben/facenet_pytorch/datasets/inaturalist2019_alphabet_csvs/train/Reptiles.csv', 
+                        'csv_val': '/nfs/home4/mhouben/facenet_pytorch/datasets/inaturalist2019_alphabet_csvs/val/Reptiles.csv'
+                        },
+                        {
+                        'name': 'inat_amphibians', 
+                        'csv_train': '/nfs/home4/mhouben/facenet_pytorch/datasets/inaturalist2019_alphabet_csvs/train/Amphibians.csv', 
+                        'csv_val': '/nfs/home4/mhouben/facenet_pytorch/datasets/inaturalist2019_alphabet_csvs/val/Amphibians.csv'
+                        }
+                                                    ]
+    
     if args.dataset_name == 'omniglot_1_folder_splits':
+        dataset_path = os.path.join(os.path.expanduser(datasets_path), args.dataset_name)
+        dataloaders, dataset_sizes, num_classes = load_own_data(dataset_path, args.train_csv_path, args.val_csv_path, 
+                                              args.image_count, args.train_format, args.valid_format, 
+                                              args.train_dataset_depth, args.val_dataset_depth, data_transforms,
+                                              args.batch_size)
+    elif args.dataset_name == 'vggface2':
+        dataset_path = os.path.join(os.path.expanduser(datasets_path), args.dataset_name)
+        dataloaders, dataset_sizes, num_classes = load_own_data(dataset_path, args.train_csv_path, args.val_csv_path, 
+                                              args.image_count, args.train_format, args.valid_format, 
+                                              args.train_dataset_depth, args.val_dataset_depth, data_transforms,
+                                              args.batch_size)
+    elif args.dataset_name == 'CASIA_aligned':
+        dataset_path = os.path.join(os.path.expanduser(datasets_path), args.dataset_name)
+        dataloaders, dataset_sizes, num_classes = load_own_data(dataset_path, args.train_csv_path, args.val_csv_path, 
+                                              args.image_count, args.train_format, args.valid_format, 
+                                              args.train_dataset_depth, args.val_dataset_depth, data_transforms,
+                                              args.batch_size)
+    elif args.dataset_name == 'inat_reptiles':
+        dataset_path = os.path.join(os.path.expanduser(datasets_path), args.dataset_name)
+        dataloaders, dataset_sizes, num_classes = load_own_data(dataset_path, args.train_csv_path, args.val_csv_path, 
+                                              args.image_count, args.train_format, args.valid_format, 
+                                              args.train_dataset_depth, args.val_dataset_depth, data_transforms,
+                                              args.batch_size)
+    elif args.dataset_name == 'inat_amphibians':
         dataset_path = os.path.join(os.path.expanduser(datasets_path), args.dataset_name)
         dataloaders, dataset_sizes, num_classes = load_own_data(dataset_path, args.train_csv_path, args.val_csv_path, 
                                               args.image_count, args.train_format, args.valid_format, 
@@ -151,7 +211,8 @@ def main(args):
     if args.run_all_models:
         MODEL_NAMES = [ 
                         #'squeezenetv10', 
-                        #'squeezenetv11', 
+                        #'squeezenetv11',
+                        '5_layer_net',
                         'resnet34', 
                         'vgg16', 
                         'googlenet', 
@@ -171,10 +232,10 @@ def main(args):
             model = model.to(device)
             print("model: ", model)
             criterion = nn.CrossEntropyLoss()
-            optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
+            optimizer = optim.SGD(model.parameters(), lr=args.learning_rate, momentum=0.9)
             scheduler = lr_scheduler.StepLR(optimizer, step_size=args.num_epochs/4, gamma=0.1)
             try:
-                model_ft = train_model(device, model, model_name, criterion, optimizer, scheduler, dataloaders, dataset_sizes, log_path, model_path, num_epochs=args.num_epochs)
+                model_ft = train_model(device, model, model_name, criterion, optimizer, scheduler, args.dataset_name, dataloaders, dataset_sizes, log_path, model_path, num_epochs=args.num_epochs)
             except:
                 print("traceback: ", traceback.format_exc())
                 print("something went wrong with model ", model_name)
@@ -188,10 +249,10 @@ def main(args):
         model = model.to(device)
         print("model: ", model)
         criterion = nn.CrossEntropyLoss()
-        optimizer = optim.Adam(model.parameters(), lr=args.learning_rate, momentum=0.9)
+        optimizer = optim.SGD(model.parameters(), lr=args.learning_rate, momentum=0.9)
         scheduler = lr_scheduler.StepLR(optimizer, step_size=args.num_epochs/4, gamma=0.1)
         
-        model_ft = train_model(device, model, model_name, criterion, optimizer, scheduler, dataloaders, dataset_sizes, log_path, model_path, num_epochs=args.num_epochs)
+        model_ft = train_model(device, model, model_name, criterion, optimizer, scheduler, args.dataset_name, dataloaders, dataset_sizes, log_path, model_path, num_epochs=args.num_epochs)
 
 def load_model(model_name, num_classes, pretrained_imagenet):
     model = None        
@@ -207,6 +268,9 @@ def load_model(model_name, num_classes, pretrained_imagenet):
         model = squeezenetv10(num_classes, pretrained_imagenet)
     elif model_name == 'squeezenetv11':
         model = squeezenetv11(num_classes, pretrained_imagenet)
+    elif model_name == '5_layer_net':
+        model = five_layer_net(num_classes, pretrained_imagenet)
+        
     else:
         raise Exception("no known model given")
     return model
@@ -239,14 +303,14 @@ def load_torchvision_data(dataset_name, dataset_path, data_transforms, dataset_d
         datasets = {x: MNISTColor(os.path.join(dataset_path, x), train=x=='train',
                     transform=data_transforms[x], target_transform=None, download=True, dataset_depth=dataset_depth[x])
                 for x in ['train', 'val']}
-    elif dataset_name == 'imagenet':#too big.
-        datasets = {x: torchvision.datasets.ImageNet(os.path.join(dataset_path, x), train=x=='train',
-                    transform=data_transforms[x], target_transform=None, download=False)
-                for x in ['train', 'val']}
-    elif dataset_name == 'cifar10':
-        datasets = {x: torchvision.datasets.CIFAR10(os.path.join(dataset_path, x), train=x=='train',
-                    transform=data_transforms[x], target_transform=None, download=True)
-                for x in ['train', 'val']}
+    #elif dataset_name == 'imagenet':#too big.
+    #    datasets = {x: torchvision.datasets.ImageNet(os.path.join(dataset_path, x), train=x=='train',
+    #                transform=data_transforms[x], target_transform=None, download=False)
+    #            for x in ['train', 'val']}
+    #elif dataset_name == 'cifar10':
+    #    datasets = {x: torchvision.datasets.CIFAR10(os.path.join(dataset_path, x), train=x=='train',
+    #                transform=data_transforms[x], target_transform=None, download=True)
+    #            for x in ['train', 'val']}
     elif dataset_name == 'fmnist':
         datasets = {x: FMNISTColor(os.path.join(dataset_path, x), train=x=='train',
                     transform=data_transforms[x], target_transform=None, download=True, dataset_depth=dataset_depth[x])
@@ -254,12 +318,12 @@ def load_torchvision_data(dataset_name, dataset_path, data_transforms, dataset_d
     else:
         raise Exception("This torchvision dataset is not known.")
     
-    #classes = []
-    #if isinstance(datasets['train'].targets, list):
-    #    x = np.array(datasets['train'].targets)
-    #    classes = np.unique(x)
-        
-    classes = datasets['train'].targets.unique()
+    classes = []
+    if isinstance(datasets['train'].targets, list):
+        x = np.array(datasets['train'].targets)
+        classes = np.unique(x)
+    else:
+        classes = datasets['train'].targets.unique()
     create_dataset_csvs(dataset_name, classes, datasets)
     num_classes = len(classes)
     dataset_sizes = {x: len(datasets[x]) for x in ['train','val']}
@@ -284,7 +348,7 @@ def load_own_data(dataset_path, train_csv_path, val_csv_path, image_count, train
                    for x in ['train', 'val']}
     return dataloaders, dataset_sizes, num_classes
 
-def train_model(device, model, model_name, criterion, optimizer, scheduler, dataloaders, dataset_sizes, log_path, model_path, num_epochs=25):
+def train_model(device, model, model_name, criterion, optimizer, scheduler, dataset_name, dataloaders, dataset_sizes, log_path, model_path, num_epochs=25):
     since = time.time()
     since_last_epoch = time.time()
     best_model_wts = copy.deepcopy(model.state_dict())
@@ -303,16 +367,11 @@ def train_model(device, model, model_name, criterion, optimizer, scheduler, data
 
             running_loss = 0.0
             running_corrects = 0
-
-            # Iterate over data.
-            for index, batch_sample in enumerate(dataloaders[phase]):
-                if not 'exception' in batch_sample:
-                    #print("index: ", index)
-                    # print("inputs: ", batch_sample['image'])
-                    #print("labels: ", batch_sample['class'])
-                    labels = batch_sample['class'].to(device)
-                    inputs = batch_sample['image'].to(device)
-                    
+            
+            if dataset_name == 'cifar10':
+                for inputs, labels in dataloaders[phase]:
+                    inputs = inputs.to(device)
+                    labels = labels.to(device)
                     # zero the parameter gradients
                     optimizer.zero_grad()
 
@@ -329,12 +388,44 @@ def train_model(device, model, model_name, criterion, optimizer, scheduler, data
                         if phase == 'train':
                             loss.backward()
                             optimizer.step()
-                            scheduler.step()
+                            
 
                     # statistics
                     running_loss += loss.item() * inputs.size(0)
                     running_corrects += torch.sum(preds == labels.data)
+            else:
+                # Iterate over data.
+                for index, batch_sample in enumerate(dataloaders[phase]):
+                    if not 'exception' in batch_sample:
+                        #print("index: ", index)
+                        # print("inputs: ", batch_sample['image'])
+                        #print("labels: ", batch_sample['class'])
+                        labels = batch_sample['class'].to(device)
+                        inputs = batch_sample['image'].to(device)
+                        
+                        # zero the parameter gradients
+                        optimizer.zero_grad()
 
+                        # forward
+                        # track history if only in train
+                        with torch.set_grad_enabled(phase == 'train'):
+                            outputs = model(inputs)
+                            # print("outputs: ", outputs)
+                            _, preds = torch.max(outputs, 1)
+                            #print("preds: ", preds)
+                            loss = criterion(outputs, labels)
+
+                            # backward + optimize only if in training phase
+                            if phase == 'train':
+                                loss.backward()
+                                optimizer.step()
+                                #scheduler.step() #does removing this here fix the problem??? why is this even here???
+
+                        # statistics
+                        running_loss += loss.item() * inputs.size(0)
+                        running_corrects += torch.sum(preds == labels.data)
+            if phase == 'train':
+                scheduler.step()
             epoch_loss = running_loss / dataset_sizes[phase]
             epoch_acc = running_corrects.double() / dataset_sizes[phase]
 
@@ -363,7 +454,7 @@ def train_model(device, model, model_name, criterion, optimizer, scheduler, data
     # load best model weights
     model.load_state_dict(best_model_wts)
     torch.save({'state_dict': model.state_dict()},
-               '{}/best_model.pth'.format(model_path))
+               '{}/best_model_{}.pth'.format(model_path, model_name))
     return model
 
 
@@ -371,10 +462,14 @@ def train_model(device, model, model_name, criterion, optimizer, scheduler, data
 def parse_arguments(argv):
     parser = argparse.ArgumentParser(description='Classic model training and validation')
 
+    parser.add_argument('--pure_validation', 
+                        help='Defines whether we only do validation. requires a pretrained model.', action='store_true')
+    parser.add_argument('--pure_validation_model_folder', type=str,
+                        help='Folder where to read the pretrained model(s) from.', default='./models/')
     parser.add_argument('--batch_size', type=int,
                         help='Batch size in SGD.', default=32)
     parser.add_argument('--num_epochs', type=int,
-                        help='Amount of epochs.', default=100)
+                        help='Amount of epochs.', default=25)
     parser.add_argument('--root_path', type=str,
                         help='Path where the datasets and jpg_datasets folders are stored.', default='./../datasets/')
     parser.add_argument('--run_all_models', 

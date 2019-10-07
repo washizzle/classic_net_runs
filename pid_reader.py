@@ -76,6 +76,8 @@ class PIDReader(Dataset):
             img = io.imread(img, plugin='imageio')
             if self.dataset_depth==1:
                 img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+            elif len(img.shape) < 3:
+                img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
             img_class = torch.from_numpy(np.array(img_class).astype('long'))
             sample = {"image": img, "class": img_class}
             if self.data_transforms:

@@ -143,32 +143,42 @@ def main(args):
     dataloaders, dataset_sizes, num_classes = None, None, None
     
     dataset_names_csvs = [
-                        {
-                        'name': 'omniglot_1_folder_splits', 
-                        'csv_train': '/nfs/home4/mhouben/facenet_pytorch/datasets/omniglot_train_1_folder.csv', 
-                        'csv_val': '/nfs/home4/mhouben/facenet_pytorch/datasets/omniglot_val_1_folder.csv'
-                        },
-                        {
-                        'name': 'vggface2', 
-                        'csv_train': '/nfs/home4/mhouben/facenet_pytorch/datasets/train_vggface2.csv', 
-                        'csv_val': '/nfs/home4/mhouben/facenet_pytorch/datasets/test_vggface2.csv'
-                        },
-                        {
-                        'name': 'CASIA_aligned', 
-                        'csv_train': '/nfs/home4/mhouben/facenet_pytorch/datasets/CASIA_train.csv', 
-                        'csv_val': '/nfs/home4/mhouben/facenet_pytorch/datasets/CASIA_test.csv'
-                        },
-                        {
-                        'name': 'inat_reptiles', 
-                        'csv_train': '/nfs/home4/mhouben/facenet_pytorch/datasets/inaturalist2019_alphabet_csvs/train/Reptiles.csv', 
-                        'csv_val': '/nfs/home4/mhouben/facenet_pytorch/datasets/inaturalist2019_alphabet_csvs/val/Reptiles.csv'
-                        },
-                        {
-                        'name': 'inat_amphibians', 
-                        'csv_train': '/nfs/home4/mhouben/facenet_pytorch/datasets/inaturalist2019_alphabet_csvs/train/Amphibians.csv', 
-                        'csv_val': '/nfs/home4/mhouben/facenet_pytorch/datasets/inaturalist2019_alphabet_csvs/val/Amphibians.csv'
-                        }
-                                                    ]
+        {
+        'name': 'omniglot_1_folder_splits', 
+        'csv_train': '/nfs/home4/mhouben/facenet_pytorch/datasets/omniglot_train_1_folder.csv', 
+        'csv_val': '/nfs/home4/mhouben/facenet_pytorch/datasets/omniglot_val_1_folder.csv',
+        'best_models_path': ''
+        },
+        {
+        'name': 'vggface2', 
+        'csv_train': '/nfs/home4/mhouben/facenet_pytorch/datasets/train_vggface2.csv', 
+        'csv_val': '/nfs/home4/mhouben/facenet_pytorch/datasets/test_vggface2.csv',
+        'best_models_path': ''
+        },
+        {
+        'name': 'CASIA_aligned', 
+        'csv_train': '/nfs/home4/mhouben/facenet_pytorch/datasets/CASIA_train.csv', 
+        'csv_val': '/nfs/home4/mhouben/facenet_pytorch/datasets/CASIA_test.csv',
+        'best_models_path': ''
+        },
+        {
+        'name': 'inat_reptiles', 
+        'csv_train': '/nfs/home4/mhouben/facenet_pytorch/datasets/inaturalist2019_alphabet_csvs/train/Reptiles.csv', 
+        'csv_val': '/nfs/home4/mhouben/facenet_pytorch/datasets/inaturalist2019_alphabet_csvs/val/Reptiles.csv',
+        'best_models_path': ''
+        },
+        {
+        'name': 'inat_amphibians', 
+        'csv_train': '/nfs/home4/mhouben/facenet_pytorch/datasets/inaturalist2019_alphabet_csvs/train/Amphibians.csv', 
+        'csv_val': '/nfs/home4/mhouben/facenet_pytorch/datasets/inaturalist2019_alphabet_csvs/val/Amphibians.csv',
+        'best_models_path': ''
+        }
+                                    ]
+    #if args.pure_validation_all_models_all_datasets:
+    #    for pretraining_set in dataset_names_csvs:
+    #        model = load_model(pretraining_set['best_model_path'])
+    #        for validation_set in dataset_names_csvs:
+    #            pure_validation(model, validation_set['csv_val'])
     
     if args.dataset_name == 'omniglot_1_folder_splits':
         dataset_path = os.path.join(os.path.expanduser(datasets_path), args.dataset_name)
@@ -217,14 +227,14 @@ def main(args):
                         'vgg16', 
                         'googlenet', 
                         'alexnet']
-        model_parameters = {
-            'model_name': 'squeezenetv10',
-            'learning_rate': 0.001, #perhaps some scheduler here that works well for the given network
-            'criterion': nn.CrossEntropyLoss()
-        }
+        #model_parameters = {
+        #    'model_name': 'squeezenetv10',
+        #    'learning_rate': 0.001, #perhaps some scheduler here that works well for the given network
+        #    'criterion': nn.CrossEntropyLoss()
+        #}
         
         for model_name in MODEL_NAMES:
-            model = load_model(model_name, num_classes, args.pretrained_imagenet)
+            model = load_tv_model(model_name, num_classes, args.pretrained_imagenet)
             
             
             # print("resnet34 model: ", model)
@@ -242,7 +252,7 @@ def main(args):
     
     else:
         
-        model = load_model(args.model_name, num_classes, args.pretrained_imagenet)
+        model = load_tv_model(args.model_name, num_classes, args.pretrained_imagenet)
         
         # print("resnet34 model: ", model)
         # model = vgg16(num_classes)
@@ -254,7 +264,7 @@ def main(args):
         
         model_ft = train_model(device, model, model_name, criterion, optimizer, scheduler, args.dataset_name, dataloaders, dataset_sizes, log_path, model_path, num_epochs=args.num_epochs)
 
-def load_model(model_name, num_classes, pretrained_imagenet):
+def load_tv_model(model_name, num_classes, pretrained_imagenet):
     model = None        
     if model_name == 'resnet34':
         model = resnet34(num_classes, pretrained_imagenet)
@@ -462,8 +472,8 @@ def train_model(device, model, model_name, criterion, optimizer, scheduler, data
 def parse_arguments(argv):
     parser = argparse.ArgumentParser(description='Classic model training and validation')
 
-    parser.add_argument('--pure_validation', 
-                        help='Defines whether we only do validation. requires a pretrained model.', action='store_true')
+    parser.add_argument('--pure_validation_all_models_all_datasets', 
+                        help='Defines whether all models and datasets are validated in one run. requires a pretrained model.', action='store_true')
     parser.add_argument('--pure_validation_model_folder', type=str,
                         help='Folder where to read the pretrained model(s) from.', default='./models/')
     parser.add_argument('--batch_size', type=int,
